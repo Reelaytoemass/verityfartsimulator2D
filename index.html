@@ -258,7 +258,20 @@ function playFartSynth(power){try{
  bubble(end-.03,280,1100,.13,.22,master);
  const sp=actx.createBufferSource();sp.buffer=noiseBuf(.2);const sb=actx.createBiquadFilter();sb.type="bandpass";sb.frequency.value=950;sb.Q.value=2;const sg=actx.createGain();sg.gain.setValueAtTime(.5,end);sg.gain.exponentialRampToValueAtTime(.001,end+.14);sp.connect(sb);sb.connect(sg);sg.connect(master);sp.start(end);sp.stop(end+.2);
 }catch(e){}}
-function launch(){if(state!=="ground")return;let tank=1+save.upgrades.tank*.12,ratio=Math.min(tank,charge),bonus=1;if(save.upgrades.luck&&Math.random()<Math.min(.45,save.upgrades.luck*.025)){bonus=1+rand(.25,.8);say("LUCKY LAUNCH!")}vy=(260+520*ratio)*(1+save.upgrades.force*.12)*bonus*gameSettings.launchSpeedMultiplier;vx=rand(-22,22);charge=0;charging=false;state="flying";boostReady=true;save.launches++;playFart(ratio);document.getElementById("stopBtn").classList.remove("hidden");document.getElementById("chargeWrap").classList.add("hidden");persist()}
+let launchPending=false;
+async function launch(){
+ if(state!=="ground"||launchPending)return;
+ launchPending=true;charging=false;say("LOADING GAME SETTINGS...",3);
+ const{data:settings,error}=await sb.rpc("get_game_settings");
+ launchPending=false;
+ if(state!=="ground")return;
+ if(error||!settings){say("COULDN'T LOAD GAME SETTINGS",3);return}
+ gameSettings={...gameSettings,...settings};
+ let tank=1+save.upgrades.tank*.12,ratio=Math.min(tank,charge),bonus=1;
+ if(save.upgrades.luck&&Math.random()<Math.min(.45,save.upgrades.luck*.025)){bonus=1+rand(.25,.8);say("LUCKY LAUNCH!")}
+ vy=(260+520*ratio)*(1+save.upgrades.force*.12)*bonus*gameSettings.launchSpeedMultiplier;
+ vx=rand(-22,22);charge=0;state="flying";boostReady=true;save.launches++;playFart(ratio);document.getElementById("stopBtn").classList.remove("hidden");document.getElementById("chargeWrap").classList.add("hidden");persist()
+}
 function finish(){let earned=flightCoins;save.coins+=earned;save.best=Math.max(save.best,Math.floor(maxHeight));save.totalDistance+=Math.floor(maxHeight);persist();document.getElementById("resultDistance").textContent=Math.floor(maxHeight).toLocaleString()+" METRES";document.getElementById("resultCoins").textContent="You earned "+earned.toLocaleString()+" points!";let dist=Math.floor(maxHeight);resetFlight();show(null);say("PEAK! "+dist.toLocaleString()+" m  ·  +"+earned.toLocaleString()+" points",3)}
 function buy(k){let c=cost(k),lvl=save.upgrades[k];if(lvl>=defs[k].max){say("MAX LEVEL!");return}if(save.coins<c){say("NOT ENOUGH POINTS!");return}save.coins-=c;save.upgrades[k]++;persist();renderShop();updateHud()}
 function renderShop(){document.getElementById("shopCoins").textContent=save.coins.toLocaleString();const list=document.getElementById("shopList");list.innerHTML="";Object.keys(defs).forEach(k=>{let d=defs[k],lvl=save.upgrades[k],max=lvl>=d.max,c=cost(k),row=document.createElement("div");row.className="row";let info=document.createElement("div");info.innerHTML=`<b>${d.name}</b><small>${d.desc} · Level ${lvl}/${d.max}</small>`;let btn=document.createElement("button");btn.textContent=max?"MAX":c.toLocaleString()+" pts";btn.disabled=max||save.coins<c;btn.onclick=()=>buy(k);row.append(info,btn);list.append(row)})}
@@ -372,7 +385,7 @@ document.getElementById("resumeBtn").onclick=()=>{state=pausedFrom;show(null);if
 document.getElementById("pauseShopBtn").onclick=()=>openShop("pause");
 document.getElementById("pauseMenuBtn").onclick=()=>{state="menu";show("menu")};
 addEventListener("keydown",e=>{ensureAudio();if(e.target&&(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT"))return;if(["Space","ArrowLeft","ArrowRight"].includes(e.code))e.preventDefault();if(e.repeat)return;
- if(e.code==="Space"){if(state==="ground")charging=true;else if(state==="result"){resetFlight();show(null)}}
+ if(e.code==="Space"){if(state==="ground"&&!launchPending)charging=true;else if(state==="result"){resetFlight();show(null)}}
  if(e.code==="ArrowLeft"||e.code==="KeyA")keys.left=true;if(e.code==="ArrowRight"||e.code==="KeyD")keys.right=true;
  if(e.code==="Escape"){if(state==="flying"||state==="ground"){pausedFrom=state;state="pause";show("pause")}else if(state==="pause"){state=pausedFrom;show(null);if(state==="ground")document.getElementById("chargeWrap").classList.remove("hidden")}else if(state==="menu"){return}}
  if(e.code==="KeyB"&&!["shop","data","login"].includes(state)){openShop(state)}
