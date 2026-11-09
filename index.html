@@ -152,7 +152,7 @@ const SUPABASE_URL="https://httrozubisyfwznamcjg.supabase.co",SUPABASE_KEY="sb_p
 let acct=null,sb=null,authBusy=false;
 function persist(){save.savedAt=Date.now();acctQueue()}
 function acctQueue(){if(!acct||acct.timer)return;acct.timer=setTimeout(()=>writeSave(),1500)}
-async function writeSave(){const a=acct;if(!a)return;if(a.timer){clearTimeout(a.timer);a.timer=null}if(a.busy){a.timer=setTimeout(()=>writeSave(),500);return}a.busy=true;try{const{error}=await sb.from("saves").upsert({user_id:a.uid,data:JSON.parse(JSON.stringify(save)),updated_at:new Date().toISOString()});if(error)throw error;setCloudStatus("☁ Saved to your account")}catch(e){setCloudStatus("☁ Couldn't save to your account. Check your connection.")}a.busy=false}
+async function writeSave(){const a=acct;if(!a)return;if(a.timer){clearTimeout(a.timer);a.timer=null}if(a.busy){a.timer=setTimeout(()=>writeSave(),500);return}a.busy=true;const localCoins=save.coins;try{const{data:remote,error:readError}=await sb.from("saves").select("data").eq("user_id",a.uid).maybeSingle();if(readError)throw readError;const remoteCoins=remote&&remote.data?sanitizeSave(remote.data).coins:(a.syncedCoins||0),delta=localCoins-(a.syncedCoins||0),mergedCoins=Math.max(0,remoteCoins+delta),payload={...save,coins:mergedCoins};const{error}=await sb.from("saves").upsert({user_id:a.uid,data:JSON.parse(JSON.stringify(payload)),updated_at:new Date().toISOString()});if(error)throw error;a.syncedCoins=mergedCoins;save.coins=Math.max(0,mergedCoins+save.coins-localCoins);updateHud();setCloudStatus("☁ Saved to your account")}catch(e){setCloudStatus("☁ Couldn't save to your account. Check your connection.")}a.busy=false}
 function setLoginMsg(t,bad){const e=document.getElementById("loginMsg");e.textContent=t;e.style.color=bad?"#ff9aa8":""}
 function setAuthBtns(on){document.getElementById("loginBtn").disabled=!on;document.getElementById("registerBtn").disabled=!on}
 function readLocalSave(){try{return JSON.parse(localStorage.getItem("veritySave")||"null")}catch(e){return null}}
@@ -160,7 +160,7 @@ async function startSession(user){
  const name=String(user.email||"").split("@")[0]||"player";
  const{data,error}=await sb.from("saves").select("data").eq("user_id",user.id).maybeSingle();if(error)throw error;
  const isAdmin=name==="admin"&&user.app_metadata?.role==="admin";acct={name,uid:user.id,timer:null,busy:false,isAdmin};
- if(data&&data.data){save=normalizeSave(sanitizeSave(data.data))}else{save=fresh();const loc=readLocalSave();if(hasProgress(loc)&&confirm("Found progress saved in this browser. Add it to your account \""+name+"\"?")){save=normalizeSave(sanitizeSave(loc));persist()}}
+ if(data&&data.data){save=normalizeSave(sanitizeSave(data.data))}else{save=fresh();const loc=readLocalSave();if(hasProgress(loc)&&confirm("Found progress saved in this browser. Add it to your account \""+name+"\"?")){save=normalizeSave(sanitizeSave(loc));persist()}}acct.syncedCoins=save.coins;
  try{localStorage.setItem("verityUser",name)}catch(e){}
  document.getElementById("passBox").value="";document.getElementById("whoLine").textContent="Logged in as "+name;setCloudStatus("☁ Progress saves to your account automatically");updateHud();document.getElementById("adminBtn").classList.toggle("hidden",!isAdmin);document.getElementById("topLogoutBtn").classList.remove("hidden");state="menu";show("menu")}
 async function doAuth(isNew){if(authBusy||!sb)return;
@@ -239,7 +239,27 @@ function launch(){if(state!=="ground")return;let tank=1+save.upgrades.tank*.12,r
 function finish(){let earned=flightCoins;save.coins+=earned;save.best=Math.max(save.best,Math.floor(maxHeight));save.totalDistance+=Math.floor(maxHeight);persist();document.getElementById("resultDistance").textContent=Math.floor(maxHeight).toLocaleString()+" METRES";document.getElementById("resultCoins").textContent="You earned "+earned.toLocaleString()+" points!";let dist=Math.floor(maxHeight);resetFlight();show(null);say("PEAK! "+dist.toLocaleString()+" m  ·  +"+earned.toLocaleString()+" points",3)}
 function buy(k){let c=cost(k),lvl=save.upgrades[k];if(lvl>=defs[k].max){say("MAX LEVEL!");return}if(save.coins<c){say("NOT ENOUGH POINTS!");return}save.coins-=c;save.upgrades[k]++;persist();renderShop();updateHud()}
 function renderShop(){document.getElementById("shopCoins").textContent=save.coins.toLocaleString();const list=document.getElementById("shopList");list.innerHTML="";Object.keys(defs).forEach(k=>{let d=defs[k],lvl=save.upgrades[k],max=lvl>=d.max,c=cost(k),row=document.createElement("div");row.className="row";let info=document.createElement("div");info.innerHTML=`<b>${d.name}</b><small>${d.desc} · Level ${lvl}/${d.max}</small>`;let btn=document.createElement("button");btn.textContent=max?"MAX":c.toLocaleString()+" pts";btn.disabled=max||save.coins<c;btn.onclick=()=>buy(k);row.append(info,btn);list.append(row)})}
-async function loadAdminScores(){const status=document.getElementById("adminStatus"),list=document.getElementById("adminScores");if(!acct?.isAdmin){state="menu";show("menu");return}status.textContent="Loading player scores...";list.replaceChildren();const{data,error}=await sb.rpc("admin_list_scores");if(error){status.textContent="Couldn't load scores. Check the admin SQL setup and try again.";return}if(!data.length){status.textContent="No saved player scores yet.";return}status.textContent="";for(const player of data){const row=document.createElement("div"),label=document.createElement("div"),name=document.createElement("b"),input=document.createElement("input"),button=document.createElement("button");row.className="row admin-score";name.textContent=player.username;label.append(name);input.type="number";input.min="0";input.step="1";input.value=String(player.points);input.setAttribute("aria-label","Points for "+player.username);button.textContent="SAVE";button.onclick=async()=>{const points=Number(input.value);if(!Number.isSafeInteger(points)||points<0){status.textContent="Enter a whole number of 0 or more.";return}button.disabled=true;const{error:saveError}=await sb.rpc("admin_set_points",{p_user_id:player.user_id,p_points:points});button.disabled=false;status.textContent=saveError?"Couldn't save points. Try again.":"Saved points for "+player.username+".";if(!saveError)player.points=points};row.append(label,input,button);list.append(row)}}
+async function loadAdminScores(){
+ const status=document.getElementById("adminStatus"),list=document.getElementById("adminScores");
+ if(!acct?.isAdmin){state="menu";show("menu");return}
+ status.textContent="Loading player scores...";list.replaceChildren();
+ const{data,error}=await sb.rpc("admin_list_scores");
+ if(error){status.textContent="Couldn't load scores: "+error.message;return}
+ if(!data.length){status.textContent="No saved player scores yet.";return}
+ status.textContent="";
+ for(const player of data){
+  const row=document.createElement("div"),label=document.createElement("div"),name=document.createElement("b"),input=document.createElement("input"),button=document.createElement("button");
+  row.className="row admin-score";name.textContent=player.username;label.append(name);input.type="number";input.min="0";input.step="1";input.value=String(player.points);input.setAttribute("aria-label","Points for "+player.username);button.textContent="SAVE";
+  button.onclick=async()=>{
+   const points=Number(input.value);
+   if(!Number.isSafeInteger(points)||points<0){status.textContent="Enter a whole number of 0 or more.";return}
+   button.disabled=true;const{error:saveError}=await sb.rpc("admin_set_points",{p_user_id:player.user_id,p_points:points});button.disabled=false;
+   if(saveError){status.textContent="Couldn't save points: "+saveError.message;return}
+   await loadAdminScores();status.textContent="Saved points for "+player.username+"."
+  };
+  row.append(label,input,button);list.append(row)
+ }
+}
 function openAdmin(){if(!acct?.isAdmin)return;state="admin";show("adminScreen");loadAdminScores()}
 function openShop(from){returnState=from;renderShop();state="shop";show("shop");document.getElementById("chargeWrap").classList.add("hidden")}
 function closeShop(){state=returnState;if(state==="menu")show("menu");else if(state==="pause")show("pause");else if(state==="result"){resetFlight();show(null)}else{show(null);if(state==="ground")document.getElementById("chargeWrap").classList.remove("hidden")}}
