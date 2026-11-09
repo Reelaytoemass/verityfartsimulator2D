@@ -253,8 +253,15 @@ async function loadAdminScores(){
   button.onclick=async()=>{
    const points=Number(input.value);
    if(!Number.isSafeInteger(points)||points<0){status.textContent="Enter a whole number of 0 or more.";return}
-   button.disabled=true;const{error:saveError}=await sb.rpc("admin_set_points",{p_user_id:player.user_id,p_points:points});button.disabled=false;
+    const adminAccount=acct;button.disabled=true;
+    if(player.user_id===adminAccount.uid){
+     if(adminAccount.timer)await writeSave();
+     while(adminAccount.busy)await new Promise(resolve=>setTimeout(resolve,25));
+     if(adminAccount.timer){clearTimeout(adminAccount.timer);adminAccount.timer=null}
+    }
+    const{error:saveError}=await sb.rpc("admin_set_points",{p_user_id:player.user_id,p_points:points});button.disabled=false;
    if(saveError){status.textContent="Couldn't save points: "+saveError.message;return}
+    if(player.user_id===adminAccount.uid){save.coins=points;adminAccount.syncedCoins=points;updateHud()}
    await loadAdminScores();status.textContent="Saved points for "+player.username+"."
   };
   row.append(label,input,button);list.append(row)
