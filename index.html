@@ -104,7 +104,12 @@ textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#
 
 <div class="screen hidden" id="adminScreen">
   <div class="card">
-    <h2>ADMIN · PLAYER POINTS</h2>
+    <h2>ADMIN · PLAYER CONTROLS</h2>
+    <div class="actions" id="adminTabs">
+      <button class="gold" data-admin-section="points">POINTS</button>
+      <button class="secondary" data-admin-section="speed">LAUNCH SPEED</button>
+      <button class="secondary" data-admin-section="upgrades">UPGRADES</button>
+    </div>
     <div id="adminScores"></div>
     <p class="muted" id="adminStatus" aria-live="polite"></p>
     <div class="actions"><button class="secondary" id="adminRefreshBtn">REFRESH</button><button class="secondary" id="adminBackBtn">BACK</button></div>
@@ -141,12 +146,12 @@ const defs={
  eff:{name:"Fuel Efficiency",desc:"Keep your speed longer",base:55,step:1.35,max:20},
  luck:{name:"Lucky Launch",desc:"Chance of bonus launch power",base:100,step:1.45,max:15}
 };
-const fresh=()=>({coins:0,best:0,launches:0,totalDistance:0,upgrades:Object.fromEntries(Object.keys(defs).map(k=>[k,0]))});
+const fresh=()=>({coins:0,best:0,launches:0,totalDistance:0,launchMultiplier:1,upgrades:Object.fromEntries(Object.keys(defs).map(k=>[k,0]))});
 let save=fresh();
 function setCloudStatus(t){const e=document.getElementById("cloudStatus");if(e)e.textContent=t}
 function normalizeSave(s){return{...fresh(),...s,upgrades:{...fresh().upgrades,...(s.upgrades||{})}}}
 function hasProgress(s){return !!s&&(s.launches>0||s.coins>0||s.best>0||Object.values(s.upgrades||{}).some(v=>v>0))}
-function sanitizeSave(o){const num=v=>Number.isFinite(v)&&v>=0?Math.floor(v):0,out=fresh();if(!o||typeof o!=="object")return out;for(const k of["coins","best","launches","totalDistance"])out[k]=num(o[k]);for(const k of Object.keys(defs))out.upgrades[k]=Math.min(defs[k].max,num((o.upgrades||{})[k]));return out}
+function sanitizeSave(o){const num=v=>Number.isFinite(v)&&v>=0?Math.floor(v):0,out=fresh();if(!o||typeof o!=="object")return out;for(const k of["coins","best","launches","totalDistance"])out[k]=num(o[k]);out.launchMultiplier=Number.isFinite(o.launchMultiplier)?Math.min(10,Math.max(.1,o.launchMultiplier)):1;for(const k of Object.keys(defs))out.upgrades[k]=Math.min(defs[k].max,num((o.upgrades||{})[k]));return out}
 function withTimeout(p,ms){return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),ms))])}
 const SUPABASE_URL="https://httrozubisyfwznamcjg.supabase.co",SUPABASE_KEY="sb_publishable_k0bG26zgjAqKBLCNL1GZGQ_tqg101jl",EMAIL_DOMAIN="verity-players.com";
 let acct=null,sb=null,authBusy=false;
@@ -235,7 +240,7 @@ function playFartSynth(power){try{
  bubble(end-.03,280,1100,.13,.22,master);
  const sp=actx.createBufferSource();sp.buffer=noiseBuf(.2);const sb=actx.createBiquadFilter();sb.type="bandpass";sb.frequency.value=950;sb.Q.value=2;const sg=actx.createGain();sg.gain.setValueAtTime(.5,end);sg.gain.exponentialRampToValueAtTime(.001,end+.14);sp.connect(sb);sb.connect(sg);sg.connect(master);sp.start(end);sp.stop(end+.2);
 }catch(e){}}
-function launch(){if(state!=="ground")return;let tank=1+save.upgrades.tank*.12,ratio=Math.min(tank,charge),bonus=1;if(save.upgrades.luck&&Math.random()<Math.min(.45,save.upgrades.luck*.025)){bonus=1+rand(.25,.8);say("LUCKY LAUNCH!")}vy=(260+520*ratio)*(1+save.upgrades.force*.12)*bonus;vx=rand(-22,22);charge=0;charging=false;state="flying";boostReady=true;save.launches++;playFart(ratio);document.getElementById("stopBtn").classList.remove("hidden");document.getElementById("chargeWrap").classList.add("hidden");persist()}
+function launch(){if(state!=="ground")return;let tank=1+save.upgrades.tank*.12,ratio=Math.min(tank,charge),bonus=1;if(save.upgrades.luck&&Math.random()<Math.min(.45,save.upgrades.luck*.025)){bonus=1+rand(.25,.8);say("LUCKY LAUNCH!")}vy=(260+520*ratio)*(1+save.upgrades.force*.12)*bonus*save.launchMultiplier;vx=rand(-22,22);charge=0;charging=false;state="flying";boostReady=true;save.launches++;playFart(ratio);document.getElementById("stopBtn").classList.remove("hidden");document.getElementById("chargeWrap").classList.add("hidden");persist()}
 function finish(){let earned=flightCoins;save.coins+=earned;save.best=Math.max(save.best,Math.floor(maxHeight));save.totalDistance+=Math.floor(maxHeight);persist();document.getElementById("resultDistance").textContent=Math.floor(maxHeight).toLocaleString()+" METRES";document.getElementById("resultCoins").textContent="You earned "+earned.toLocaleString()+" points!";let dist=Math.floor(maxHeight);resetFlight();show(null);say("PEAK! "+dist.toLocaleString()+" m  ·  +"+earned.toLocaleString()+" points",3)}
 function buy(k){let c=cost(k),lvl=save.upgrades[k];if(lvl>=defs[k].max){say("MAX LEVEL!");return}if(save.coins<c){say("NOT ENOUGH POINTS!");return}save.coins-=c;save.upgrades[k]++;persist();renderShop();updateHud()}
 function renderShop(){document.getElementById("shopCoins").textContent=save.coins.toLocaleString();const list=document.getElementById("shopList");list.innerHTML="";Object.keys(defs).forEach(k=>{let d=defs[k],lvl=save.upgrades[k],max=lvl>=d.max,c=cost(k),row=document.createElement("div");row.className="row";let info=document.createElement("div");info.innerHTML=`<b>${d.name}</b><small>${d.desc} · Level ${lvl}/${d.max}</small>`;let btn=document.createElement("button");btn.textContent=max?"MAX":c.toLocaleString()+" pts";btn.disabled=max||save.coins<c;btn.onclick=()=>buy(k);row.append(info,btn);list.append(row)})}
