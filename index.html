@@ -35,6 +35,8 @@ button:active{transform:scale(.98)}
 .row button{min-width:112px;padding:10px}
 .actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}
 #shopList{margin-top:12px}
+.admin-score input{width:130px;margin:0}
+@media(max-width:600px){.admin-score input{width:90px}}
 input{display:block;width:100%;margin:10px 0;background:#12183a;color:#fff;border:1px solid #8290bb;border-radius:12px;padding:13px;font-size:16px}
 textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#fff;border:1px solid #8290bb;border-radius:12px;padding:10px;font:12px/1.4 monospace;resize:none}
 .hidden{display:none!important}
@@ -74,7 +76,7 @@ textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#
     <h1>VERITY</h1><h2>FART TO THE MOON</h2>
     <p>Charge up. Blast off. Upgrade. Go further.</p>
     <p>Hold <span class="key">SPACE</span> to charge, then release to launch!</p>
-    <div class="actions"><button id="playBtn">LET'S BLAST OFF</button><button class="secondary" id="menuShopBtn">UPGRADES</button></div>
+    <div class="actions"><button id="playBtn">LET'S BLAST OFF</button><button class="secondary" id="menuShopBtn">UPGRADES</button><button class="secondary hidden" id="adminBtn">ADMIN PANEL</button></div>
     <div class="actions" style="margin-top:10px"><button class="secondary" id="dataBtn">💾 BACKUP / RESTORE SAVE</button><button class="secondary" id="logoutBtn">LOG OUT</button></div>
     <p class="muted" id="whoLine"></p>
     <p class="muted" id="cloudStatus"></p>
@@ -97,6 +99,15 @@ textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#
     <p>Your points: <b id="shopCoins" style="color:#ffdb59">0</b></p>
     <div id="shopList"></div>
     <div class="actions"><button class="secondary" id="closeShop">BACK TO GAME</button></div>
+  </div>
+</div>
+
+<div class="screen hidden" id="adminScreen">
+  <div class="card">
+    <h2>ADMIN · PLAYER POINTS</h2>
+    <div id="adminScores"></div>
+    <p class="muted" id="adminStatus" aria-live="polite"></p>
+    <div class="actions"><button class="secondary" id="adminRefreshBtn">REFRESH</button><button class="secondary" id="adminBackBtn">BACK</button></div>
   </div>
 </div>
 
@@ -148,10 +159,10 @@ function readLocalSave(){try{return JSON.parse(localStorage.getItem("veritySave"
 async function startSession(user){
  const name=String(user.email||"").split("@")[0]||"player";
  const{data,error}=await sb.from("saves").select("data").eq("user_id",user.id).maybeSingle();if(error)throw error;
- acct={name,uid:user.id,timer:null,busy:false};
+ const isAdmin=name==="admin"&&user.app_metadata?.role==="admin";acct={name,uid:user.id,timer:null,busy:false,isAdmin};
  if(data&&data.data){save=normalizeSave(sanitizeSave(data.data))}else{save=fresh();const loc=readLocalSave();if(hasProgress(loc)&&confirm("Found progress saved in this browser. Add it to your account \""+name+"\"?")){save=normalizeSave(sanitizeSave(loc));persist()}}
  try{localStorage.setItem("verityUser",name)}catch(e){}
- document.getElementById("passBox").value="";document.getElementById("whoLine").textContent="Logged in as "+name;setCloudStatus("☁ Progress saves to your account automatically");updateHud();document.getElementById("topLogoutBtn").classList.remove("hidden");state="menu";show("menu")}
+ document.getElementById("passBox").value="";document.getElementById("whoLine").textContent="Logged in as "+name;setCloudStatus("☁ Progress saves to your account automatically");updateHud();document.getElementById("adminBtn").classList.toggle("hidden",!isAdmin);document.getElementById("topLogoutBtn").classList.remove("hidden");state="menu";show("menu")}
 async function doAuth(isNew){if(authBusy||!sb)return;
  const n=document.getElementById("userBox").value.trim().toLowerCase(),p=document.getElementById("passBox").value;
  if(!/^[a-z0-9_-]{3,20}$/.test(n)){setLoginMsg("Username must be 3-20 letters, numbers, - or _ (no spaces).",true);return}
@@ -171,7 +182,7 @@ async function doAuth(isNew){if(authBusy||!sb)return;
   }
  }catch(e){acct=null;setLoginMsg("Something went wrong ("+((e&&e.message)||"error")+"). Try again.",true)}
  finally{authBusy=false;setAuthBtns(true)}}
-async function logout(){const a=acct;if(a){if(a.timer)await writeSave();for(let i=0;i<20&&a.busy;i++)await new Promise(r=>setTimeout(r,150))}try{await sb.auth.signOut()}catch(e){}acct=null;save=fresh();updateHud();document.getElementById("passBox").value="";document.getElementById("topLogoutBtn").classList.add("hidden");document.getElementById("chargeWrap").classList.add("hidden");setLoginMsg("You're logged out.");state="login";show("login")}
+async function logout(){const a=acct;if(a){if(a.timer)await writeSave();for(let i=0;i<20&&a.busy;i++)await new Promise(r=>setTimeout(r,150))}try{await sb.auth.signOut()}catch(e){}acct=null;save=fresh();updateHud();document.getElementById("passBox").value="";document.getElementById("adminBtn").classList.add("hidden");document.getElementById("topLogoutBtn").classList.add("hidden");document.getElementById("chargeWrap").classList.add("hidden");setLoginMsg("You're logged out.");state="login";show("login")}
 async function initAuth(){
  try{const u=localStorage.getItem("verityUser");if(u)document.getElementById("userBox").value=u}catch(e){}
  setAuthBtns(false);
@@ -228,6 +239,8 @@ function launch(){if(state!=="ground")return;let tank=1+save.upgrades.tank*.12,r
 function finish(){let earned=flightCoins;save.coins+=earned;save.best=Math.max(save.best,Math.floor(maxHeight));save.totalDistance+=Math.floor(maxHeight);persist();document.getElementById("resultDistance").textContent=Math.floor(maxHeight).toLocaleString()+" METRES";document.getElementById("resultCoins").textContent="You earned "+earned.toLocaleString()+" points!";let dist=Math.floor(maxHeight);resetFlight();show(null);say("PEAK! "+dist.toLocaleString()+" m  ·  +"+earned.toLocaleString()+" points",3)}
 function buy(k){let c=cost(k),lvl=save.upgrades[k];if(lvl>=defs[k].max){say("MAX LEVEL!");return}if(save.coins<c){say("NOT ENOUGH POINTS!");return}save.coins-=c;save.upgrades[k]++;persist();renderShop();updateHud()}
 function renderShop(){document.getElementById("shopCoins").textContent=save.coins.toLocaleString();const list=document.getElementById("shopList");list.innerHTML="";Object.keys(defs).forEach(k=>{let d=defs[k],lvl=save.upgrades[k],max=lvl>=d.max,c=cost(k),row=document.createElement("div");row.className="row";let info=document.createElement("div");info.innerHTML=`<b>${d.name}</b><small>${d.desc} · Level ${lvl}/${d.max}</small>`;let btn=document.createElement("button");btn.textContent=max?"MAX":c.toLocaleString()+" pts";btn.disabled=max||save.coins<c;btn.onclick=()=>buy(k);row.append(info,btn);list.append(row)})}
+async function loadAdminScores(){const status=document.getElementById("adminStatus"),list=document.getElementById("adminScores");if(!acct?.isAdmin){state="menu";show("menu");return}status.textContent="Loading player scores...";list.replaceChildren();const{data,error}=await sb.rpc("admin_list_scores");if(error){status.textContent="Couldn't load scores. Check the admin SQL setup and try again.";return}if(!data.length){status.textContent="No saved player scores yet.";return}status.textContent="";for(const player of data){const row=document.createElement("div"),label=document.createElement("div"),name=document.createElement("b"),input=document.createElement("input"),button=document.createElement("button");row.className="row admin-score";name.textContent=player.username;label.append(name);input.type="number";input.min="0";input.step="1";input.value=String(player.points);input.setAttribute("aria-label","Points for "+player.username);button.textContent="SAVE";button.onclick=async()=>{const points=Number(input.value);if(!Number.isSafeInteger(points)||points<0){status.textContent="Enter a whole number of 0 or more.";return}button.disabled=true;const{error:saveError}=await sb.rpc("admin_set_points",{p_user_id:player.user_id,p_points:points});button.disabled=false;status.textContent=saveError?"Couldn't save points. Try again.":"Saved points for "+player.username+".";if(!saveError)player.points=points};row.append(label,input,button);list.append(row)}}
+function openAdmin(){if(!acct?.isAdmin)return;state="admin";show("adminScreen");loadAdminScores()}
 function openShop(from){returnState=from;renderShop();state="shop";show("shop");document.getElementById("chargeWrap").classList.add("hidden")}
 function closeShop(){state=returnState;if(state==="menu")show("menu");else if(state==="pause")show("pause");else if(state==="result"){resetFlight();show(null)}else{show(null);if(state==="ground")document.getElementById("chargeWrap").classList.remove("hidden")}}
 let last=performance.now(),keys={},pausedFrom="flying";
@@ -260,7 +273,7 @@ function draw(){let vs=state==="shop"?(returnState==="pause"?pausedFrom:returnSt
  if(state==="menu"){ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 32px system-ui";ctx.fillText("HOLD SPACE TO CHARGE",W/2,H*.25)}
 }
 function showError(e){try{let b=document.getElementById("errBox");if(!b){b=document.createElement("div");b.id="errBox";b.style.cssText="position:fixed;left:8px;right:8px;bottom:8px;z-index:99;background:#7a1020;color:#fff;padding:10px 14px;border-radius:10px;font:13px monospace;white-space:pre-wrap";document.body.appendChild(b)}b.textContent="Game error (please send this to Claude): "+(e&&e.stack?e.stack:e)}catch(_){}}
-function frame(now){let dt=Math.min(Math.max((now-last)/1000,0),.04);last=now;try{if(!["menu","shop","pause","result","data","login"].includes(state))update(dt);draw()}catch(e){console.error(e);showError(e);state="menu";try{show("menu")}catch(_){}}requestAnimationFrame(frame)}
+function frame(now){let dt=Math.min(Math.max((now-last)/1000,0),.04);last=now;try{if(!["menu","shop","pause","result","data","login","admin"].includes(state))update(dt);draw()}catch(e){console.error(e);showError(e);state="menu";try{show("menu")}catch(_){}}requestAnimationFrame(frame)}
 addEventListener("error",ev=>showError(ev.error||ev.message));
 requestAnimationFrame(frame);
 
@@ -268,6 +281,9 @@ addEventListener("pointerdown",ensureAudio);
 document.getElementById("playBtn").onclick=()=>{resetFlight();show(null)};
 document.getElementById("stopBtn").onclick=()=>{if(state==="flying")finish()};
 document.getElementById("menuShopBtn").onclick=()=>openShop("menu");
+document.getElementById("adminBtn").onclick=openAdmin;
+document.getElementById("adminRefreshBtn").onclick=loadAdminScores;
+document.getElementById("adminBackBtn").onclick=()=>{state="menu";show("menu")};
 document.getElementById("topShopBtn").onclick=function(){this.blur();if(["ground","flying"].includes(state))openShop(state)};
 document.getElementById("closeShop").onclick=closeShop;
 document.getElementById("loginBtn").onclick=()=>doAuth(false);
