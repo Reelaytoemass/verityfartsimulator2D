@@ -2,7 +2,9 @@
 
 ## Admin score panel
 
-The admin panel edits player points. In the Supabase SQL Editor, run `admin.sql`.
+The admin panel edits player points, launch speed, and Force/Tank upgrade levels.
+In the Supabase SQL Editor, run `admin.sql` (re-run it after updating this file
+to add the launch controls).
 Create the `admin` game account, verify that it is the account you control, then
 grant its protected app metadata role in the SQL Editor:
 

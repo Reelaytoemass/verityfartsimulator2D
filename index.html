@@ -36,6 +36,8 @@ button:active{transform:scale(.98)}
 .actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px}
 #shopList{margin-top:12px}
 .admin-score input{width:130px;margin:0}
+.admin-score label{display:flex;align-items:center;gap:6px;font-size:12px;color:#c8d1ed}
+.admin-score{flex-wrap:wrap}
 @media(max-width:600px){.admin-score input{width:90px}}
 input{display:block;width:100%;margin:10px 0;background:#12183a;color:#fff;border:1px solid #8290bb;border-radius:12px;padding:13px;font-size:16px}
 textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#fff;border:1px solid #8290bb;border-radius:12px;padding:10px;font:12px/1.4 monospace;resize:none}
@@ -157,7 +159,22 @@ const SUPABASE_URL="https://httrozubisyfwznamcjg.supabase.co",SUPABASE_KEY="sb_p
 let acct=null,sb=null,authBusy=false;
 function persist(){save.savedAt=Date.now();acctQueue()}
 function acctQueue(){if(!acct||acct.timer)return;acct.timer=setTimeout(()=>writeSave(),1500)}
-async function writeSave(){const a=acct;if(!a)return;if(a.timer){clearTimeout(a.timer);a.timer=null}if(a.busy){a.timer=setTimeout(()=>writeSave(),500);return}a.busy=true;const localCoins=save.coins;try{const{data:remote,error:readError}=await sb.from("saves").select("data").eq("user_id",a.uid).maybeSingle();if(readError)throw readError;const remoteCoins=remote&&remote.data?sanitizeSave(remote.data).coins:(a.syncedCoins||0),delta=localCoins-(a.syncedCoins||0),mergedCoins=Math.max(0,remoteCoins+delta),payload={...save,coins:mergedCoins};const{error}=await sb.from("saves").upsert({user_id:a.uid,data:JSON.parse(JSON.stringify(payload)),updated_at:new Date().toISOString()});if(error)throw error;a.syncedCoins=mergedCoins;save.coins=Math.max(0,mergedCoins+save.coins-localCoins);updateHud();setCloudStatus("☁ Saved to your account")}catch(e){setCloudStatus("☁ Couldn't save to your account. Check your connection.")}a.busy=false}
+async function writeSave(){
+ const a=acct;if(!a)return;if(a.timer){clearTimeout(a.timer);a.timer=null}if(a.busy){a.timer=setTimeout(()=>writeSave(),500);return}
+ a.busy=true;const localCoins=save.coins,localMultiplier=save.launchMultiplier,localUpgrades={...save.upgrades};
+ try{
+  const{data:remote,error:readError}=await sb.from("saves").select("data").eq("user_id",a.uid).maybeSingle();if(readError)throw readError;
+  const remoteSave=remote&&remote.data?sanitizeSave(remote.data):fresh(),mergedCoins=Math.max(0,remoteSave.coins+localCoins-(a.syncedCoins||0)),mergedUpgrades={};
+  for(const key of Object.keys(defs)){mergedUpgrades[key]=localUpgrades[key]!==a.syncedUpgrades?.[key]?localUpgrades[key]:remoteSave.upgrades[key]}
+  const mergedMultiplier=localMultiplier!==a.syncedLaunchMultiplier?localMultiplier:remoteSave.launchMultiplier,payload={...save,coins:mergedCoins,launchMultiplier:mergedMultiplier,upgrades:mergedUpgrades};
+  const{error}=await sb.from("saves").upsert({user_id:a.uid,data:JSON.parse(JSON.stringify(payload)),updated_at:new Date().toISOString()});if(error)throw error;
+  a.syncedCoins=mergedCoins;a.syncedLaunchMultiplier=mergedMultiplier;a.syncedUpgrades={...mergedUpgrades};
+  save.coins=Math.max(0,mergedCoins+save.coins-localCoins);save.launchMultiplier=Math.min(10,Math.max(.1,mergedMultiplier+save.launchMultiplier-localMultiplier));
+  for(const key of Object.keys(defs))save.upgrades[key]=Math.max(0,Math.min(defs[key].max,mergedUpgrades[key]+save.upgrades[key]-localUpgrades[key]));
+  updateHud();setCloudStatus("☁ Saved to your account")
+ }catch(e){setCloudStatus("☁ Couldn't save to your account. Check your connection.")}
+ a.busy=false
+}
 function setLoginMsg(t,bad){const e=document.getElementById("loginMsg");e.textContent=t;e.style.color=bad?"#ff9aa8":""}
 function setAuthBtns(on){document.getElementById("loginBtn").disabled=!on;document.getElementById("registerBtn").disabled=!on}
 function readLocalSave(){try{return JSON.parse(localStorage.getItem("veritySave")||"null")}catch(e){return null}}
@@ -165,7 +182,7 @@ async function startSession(user){
  const name=String(user.email||"").split("@")[0]||"player";
  const{data,error}=await sb.from("saves").select("data").eq("user_id",user.id).maybeSingle();if(error)throw error;
  const isAdmin=name==="admin"&&user.app_metadata?.role==="admin";acct={name,uid:user.id,timer:null,busy:false,isAdmin};
- if(data&&data.data){save=normalizeSave(sanitizeSave(data.data))}else{save=fresh();const loc=readLocalSave();if(hasProgress(loc)&&confirm("Found progress saved in this browser. Add it to your account \""+name+"\"?")){save=normalizeSave(sanitizeSave(loc));persist()}}acct.syncedCoins=save.coins;
+ if(data&&data.data){save=normalizeSave(sanitizeSave(data.data))}else{save=fresh();const loc=readLocalSave();if(hasProgress(loc)&&confirm("Found progress saved in this browser. Add it to your account \""+name+"\"?")){save=normalizeSave(sanitizeSave(loc));persist()}}acct.syncedCoins=save.coins;acct.syncedLaunchMultiplier=save.launchMultiplier;acct.syncedUpgrades={...save.upgrades};
  try{localStorage.setItem("verityUser",name)}catch(e){}
  document.getElementById("passBox").value="";document.getElementById("whoLine").textContent="Logged in as "+name;setCloudStatus("☁ Progress saves to your account automatically");updateHud();document.getElementById("adminBtn").classList.toggle("hidden",!isAdmin);document.getElementById("topLogoutBtn").classList.remove("hidden");state="menu";show("menu")}
 async function doAuth(isNew){if(authBusy||!sb)return;
@@ -244,32 +261,39 @@ function launch(){if(state!=="ground")return;let tank=1+save.upgrades.tank*.12,r
 function finish(){let earned=flightCoins;save.coins+=earned;save.best=Math.max(save.best,Math.floor(maxHeight));save.totalDistance+=Math.floor(maxHeight);persist();document.getElementById("resultDistance").textContent=Math.floor(maxHeight).toLocaleString()+" METRES";document.getElementById("resultCoins").textContent="You earned "+earned.toLocaleString()+" points!";let dist=Math.floor(maxHeight);resetFlight();show(null);say("PEAK! "+dist.toLocaleString()+" m  ·  +"+earned.toLocaleString()+" points",3)}
 function buy(k){let c=cost(k),lvl=save.upgrades[k];if(lvl>=defs[k].max){say("MAX LEVEL!");return}if(save.coins<c){say("NOT ENOUGH POINTS!");return}save.coins-=c;save.upgrades[k]++;persist();renderShop();updateHud()}
 function renderShop(){document.getElementById("shopCoins").textContent=save.coins.toLocaleString();const list=document.getElementById("shopList");list.innerHTML="";Object.keys(defs).forEach(k=>{let d=defs[k],lvl=save.upgrades[k],max=lvl>=d.max,c=cost(k),row=document.createElement("div");row.className="row";let info=document.createElement("div");info.innerHTML=`<b>${d.name}</b><small>${d.desc} · Level ${lvl}/${d.max}</small>`;let btn=document.createElement("button");btn.textContent=max?"MAX":c.toLocaleString()+" pts";btn.disabled=max||save.coins<c;btn.onclick=()=>buy(k);row.append(info,btn);list.append(row)})}
-async function loadAdminScores(){
+let adminSection="points";
+async function loadAdminScores(section=adminSection){
+ adminSection=section;
+ document.querySelectorAll("[data-admin-section]").forEach(button=>{const active=button.dataset.adminSection===section;button.classList.toggle("gold",active);button.classList.toggle("secondary",!active)});
  const status=document.getElementById("adminStatus"),list=document.getElementById("adminScores");
  if(!acct?.isAdmin){state="menu";show("menu");return}
- status.textContent="Loading player scores...";list.replaceChildren();
+ status.textContent="Loading player settings...";list.replaceChildren();
  const{data,error}=await sb.rpc("admin_list_scores");
- if(error){status.textContent="Couldn't load scores: "+error.message;return}
- if(!data.length){status.textContent="No saved player scores yet.";return}
+ if(error){status.textContent="Couldn't load player settings: "+error.message;return}
+ if(!data.length){status.textContent="No saved player settings yet.";return}
  status.textContent="";
  for(const player of data){
-  const row=document.createElement("div"),label=document.createElement("div"),name=document.createElement("b"),input=document.createElement("input"),button=document.createElement("button");
-  row.className="row admin-score";name.textContent=player.username;label.append(name);input.type="number";input.min="0";input.step="1";input.value=String(player.points);input.setAttribute("aria-label","Points for "+player.username);button.textContent="SAVE";
+  const row=document.createElement("div"),label=document.createElement("div"),name=document.createElement("b"),button=document.createElement("button"),fields=[];
+  row.className="row admin-score";name.textContent=player.username;label.append(name);button.textContent="SAVE";
+  const addField=(caption,min,max,step,value)=>{const field=document.createElement("label"),input=document.createElement("input");field.append(document.createTextNode(caption));input.type="number";input.min=String(min);input.max=String(max);input.step=String(step);input.value=String(value);input.setAttribute("aria-label",caption+" for "+player.username);field.append(input);row.append(field);fields.push(input)};
+  if(section==="points")addField("Points",0,Number.MAX_SAFE_INTEGER,1,player.points);
+  else if(section==="speed")addField("Speed ×",.1,10,.1,player.launch_multiplier);
+  else{addField("Force",0,30,1,player.force_level);addField("Tank",0,20,1,player.tank_level)}
   button.onclick=async()=>{
-   const points=Number(input.value);
-   if(!Number.isSafeInteger(points)||points<0){status.textContent="Enter a whole number of 0 or more.";return}
-    const adminAccount=acct;button.disabled=true;
-    if(player.user_id===adminAccount.uid){
-     if(adminAccount.timer)await writeSave();
-     while(adminAccount.busy)await new Promise(resolve=>setTimeout(resolve,25));
-     if(adminAccount.timer){clearTimeout(adminAccount.timer);adminAccount.timer=null}
-    }
-    const{error:saveError}=await sb.rpc("admin_set_points",{p_user_id:player.user_id,p_points:points});button.disabled=false;
-   if(saveError){status.textContent="Couldn't save points: "+saveError.message;return}
-    if(player.user_id===adminAccount.uid){save.coins=points;adminAccount.syncedCoins=points;updateHud()}
-   await loadAdminScores();status.textContent="Saved points for "+player.username+"."
+  const values=fields.map(input=>Number(input.value)),valid=fields.every((input,index)=>{const units=values[index]/Number(input.step);return Number.isFinite(values[index])&&values[index]>=Number(input.min)&&values[index]<=Number(input.max)&&Math.abs(units-Math.round(units))<1e-8});
+   if(!valid){status.textContent="Enter values within the displayed limits.";return}
+   const adminAccount=acct;button.disabled=true;
+   if(player.user_id===adminAccount.uid){if(adminAccount.timer)await writeSave();while(adminAccount.busy)await new Promise(resolve=>setTimeout(resolve,25));if(adminAccount.timer){clearTimeout(adminAccount.timer);adminAccount.timer=null}}
+   let result;
+   if(section==="points")result=await sb.rpc("admin_set_points",{p_user_id:player.user_id,p_points:values[0]});
+   else if(section==="speed")result=await sb.rpc("admin_set_launch_multiplier",{p_user_id:player.user_id,p_multiplier:values[0]});
+   else result=await sb.rpc("admin_set_launch_upgrades",{p_user_id:player.user_id,p_force_level:values[0],p_tank_level:values[1]});
+   button.disabled=false;
+   if(result.error){status.textContent="Couldn't save settings: "+result.error.message;return}
+   if(player.user_id===adminAccount.uid){if(section==="points"){save.coins=values[0];adminAccount.syncedCoins=values[0]}else if(section==="speed")save.launchMultiplier=values[0];else{save.upgrades.force=values[0];save.upgrades.tank=values[1]}updateHud()}
+   await loadAdminScores(section);status.textContent="Saved settings for "+player.username+"."
   };
-  row.append(label,input,button);list.append(row)
+  row.append(label,button);list.append(row)
  }
 }
 function openAdmin(){if(!acct?.isAdmin)return;state="admin";show("adminScreen");loadAdminScores()}
@@ -314,7 +338,8 @@ document.getElementById("playBtn").onclick=()=>{resetFlight();show(null)};
 document.getElementById("stopBtn").onclick=()=>{if(state==="flying")finish()};
 document.getElementById("menuShopBtn").onclick=()=>openShop("menu");
 document.getElementById("adminBtn").onclick=openAdmin;
-document.getElementById("adminRefreshBtn").onclick=loadAdminScores;
+document.getElementById("adminRefreshBtn").onclick=()=>loadAdminScores();
+document.getElementById("adminTabs").onclick=event=>{const button=event.target.closest("[data-admin-section]");if(button)loadAdminScores(button.dataset.adminSection)};
 document.getElementById("adminBackBtn").onclick=()=>{state="menu";show("menu")};
 document.getElementById("topShopBtn").onclick=function(){this.blur();if(["ground","flying"].includes(state))openShop(state)};
 document.getElementById("closeShop").onclick=closeShop;
