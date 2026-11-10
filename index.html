@@ -10,14 +10,13 @@
 body{margin:0;background:#090d25;color:#fff;font-family:system-ui,Arial,sans-serif;overflow:hidden}
 #game{display:block;width:100vw;height:100vh}
 .hud{position:fixed;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;gap:10px;pointer-events:none}
-#topLogoutBtn{position:fixed;top:122px;right:12px;padding:9px 16px;font-size:13px;box-shadow:0 5px 20px #0004}
-#adminQuickBtn{position:fixed;left:12px;bottom:12px;z-index:20;padding:8px 12px;font-size:12px;box-shadow:0 5px 20px #0004}
-#topShopBtn{pointer-events:auto;box-shadow:0 5px 20px #0004;margin-bottom:6px}
+#bottomBar{position:fixed;z-index:30;left:50%;bottom:10px;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:6px;max-width:calc(100vw - 20px);padding:6px;background:rgba(22,28,54,.94);border:1px solid #66739c;border-radius:14px;box-shadow:0 5px 20px #0005}
+#bottomBar button{padding:9px 12px;font-size:12px;white-space:nowrap}
 .pill{background:var(--panel);border:1px solid #66739c;border-radius:14px;padding:10px 14px;min-width:155px;box-shadow:0 5px 20px #0003}
 .pill b{display:block;font-size:18px}.muted{font-size:12px;color:#c7d1ee}
 #centerHud{position:fixed;z-index:2;top:12px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;text-shadow:0 2px 6px #0008}
 #stopBtn{pointer-events:auto;margin-top:8px;background:#ff6b6b;color:#321414;box-shadow:0 5px 20px #0004}
-#chargeWrap{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);width:min(420px,85vw);text-align:center;pointer-events:none}
+#chargeWrap{position:fixed;bottom:78px;left:50%;transform:translateX(-50%);width:min(420px,85vw);text-align:center;pointer-events:none}
 #chargeBar{height:18px;border-radius:20px;background:#222b4d;border:2px solid #d8def5;overflow:hidden;margin-top:7px}
 #chargeFill{height:100%;width:0;background:linear-gradient(90deg,#70e4b0,#ffdb4a,#ff8b44);border-radius:20px}
 #message{position:fixed;top:105px;left:50%;transform:translateX(-50%);color:#ffe27a;font-weight:900;font-size:clamp(18px,3vw,28px);text-shadow:0 3px 7px #000;pointer-events:none;text-align:center}
@@ -40,6 +39,7 @@ button:active{transform:scale(.98)}
 .admin-score label{display:flex;align-items:center;gap:6px;font-size:12px;color:#c8d1ed}
 .admin-score{flex-wrap:wrap}
 @media(max-width:600px){.admin-score input{width:90px}}
+@media(max-width:600px){#bottomBar{gap:3px;padding:5px}#bottomBar button{padding:8px 9px;font-size:11px}}
 input{display:block;width:100%;margin:10px 0;background:#12183a;color:#fff;border:1px solid #8290bb;border-radius:12px;padding:13px;font-size:16px}
 textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#fff;border:1px solid #8290bb;border-radius:12px;padding:10px;font:12px/1.4 monospace;resize:none}
 .hidden{display:none!important}
@@ -53,9 +53,8 @@ textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#
   <div class="pill"><b id="heightText">0 m</b><span class="muted">HEIGHT</span><br><b id="coinText" style="color:#ffd43b">0</b><span class="muted"> POINTS</span></div>
   <div class="pill" style="text-align:right"><b id="bestText">0 m</b><span class="muted">BEST DISTANCE</span><br><span class="muted" id="zoneText">GRASSLANDS</span></div>
 </div>
-<button class="secondary hidden" id="topLogoutBtn">LOG OUT</button>
-<button class="gold hidden" id="adminQuickBtn">ADMIN</button>
-<div id="centerHud"><button class="gold" id="topShopBtn">🚀 UPGRADES (B)</button><br><button class="hidden" id="stopBtn">STOP</button><br><b id="flightHint"></b></div>
+<div id="bottomBar" class="hidden"><button class="gold" id="navShopBtn">SHOP</button><button class="secondary" id="navBackupBtn">BACKUP</button><button class="secondary hidden" id="navAdminBtn">ADMIN</button><button class="secondary" id="navLogoutBtn">LOG OUT</button></div>
+<div id="centerHud"><button class="hidden" id="stopBtn">STOP</button><b id="flightHint"></b></div>
 <div id="message"></div>
 <div id="chargeWrap" class="hidden">
   <b id="chargeLabel">HOLD SPACE TO CHARGE</b>
@@ -80,8 +79,7 @@ textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#
     <h1>VERITY</h1><h2>FART TO THE MOON</h2>
     <p>Charge up. Blast off. Upgrade. Go further.</p>
     <p>Hold <span class="key">SPACE</span> to charge, then release to launch!</p>
-    <div class="actions"><button id="playBtn">LET'S BLAST OFF</button><button class="secondary" id="menuShopBtn">UPGRADES</button><button class="secondary hidden" id="adminBtn">ADMIN PANEL</button></div>
-    <div class="actions" style="margin-top:10px"><button class="secondary" id="dataBtn">💾 BACKUP / RESTORE SAVE</button><button class="secondary" id="logoutBtn">LOG OUT</button></div>
+    <div class="actions"><button id="playBtn">LET'S BLAST OFF</button></div>
     <p class="muted" id="whoLine"></p>
     <p class="muted" id="cloudStatus"></p>
   </div>
@@ -125,12 +123,12 @@ textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#
     <h2>FLIGHT COMPLETE!</h2>
     <h1 id="resultDistance">0 m</h1>
     <p id="resultCoins">You earned 0 coins!</p>
-    <div class="actions"><button id="againBtn">FLY AGAIN</button><button class="gold" id="resultShopBtn">UPGRADES</button><button class="secondary" id="menuBtn">MAIN MENU</button></div>
+    <div class="actions"><button id="againBtn">FLY AGAIN</button><button class="secondary" id="menuBtn">MAIN MENU</button></div>
   </div>
 </div>
 
 <div class="screen hidden" id="pause">
-  <div class="card"><h1>PAUSED</h1><p>Verity is taking a breather.</p><div class="actions"><button id="resumeBtn">RESUME</button><button class="gold" id="pauseShopBtn">UPGRADES</button><button class="secondary" id="pauseMenuBtn">MAIN MENU</button></div></div>
+  <div class="card"><h1>PAUSED</h1><p>Verity is taking a breather.</p><div class="actions"><button id="resumeBtn">RESUME</button><button class="secondary" id="pauseMenuBtn">MAIN MENU</button></div></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.js"></script>
