@@ -188,7 +188,7 @@ async function startSession(user){
  const{data:settings,error:settingsError}=await sb.rpc("get_game_settings");if(!settingsError&&settings)gameSettings={...gameSettings,...settings};
  if(data&&data.data){save=normalizeSave(sanitizeSave(data.data))}else{save=fresh();const loc=readLocalSave();if(hasProgress(loc)&&confirm("Found progress saved in this browser. Add it to your account \""+name+"\"?")){save=normalizeSave(sanitizeSave(loc));persist()}}acct.syncedCoins=save.coins;acct.syncedUpgradeTier=save.upgradeTier;acct.syncedUpgrades={...save.upgrades};
  try{localStorage.setItem("verityUser",name)}catch(e){}
- document.getElementById("passBox").value="";document.getElementById("whoLine").textContent="Logged in as "+name;setCloudStatus(name==="admin"&&adminCheckError?"☁ Admin access check failed: "+adminCheckError.message:"☁ Progress saves to your account automatically");updateHud();document.getElementById("adminBtn").classList.toggle("hidden",!isAdmin);document.getElementById("adminQuickBtn").classList.toggle("hidden",!isAdmin);document.getElementById("topLogoutBtn").classList.remove("hidden");state="menu";show("menu")}
+ document.getElementById("passBox").value="";document.getElementById("whoLine").textContent="Logged in as "+name;setCloudStatus(name==="admin"&&adminCheckError?"☁ Admin access check failed: "+adminCheckError.message:"☁ Progress saves to your account automatically");updateHud();document.getElementById("navAdminBtn").classList.toggle("hidden",!isAdmin);document.getElementById("bottomBar").classList.remove("hidden");state="menu";show("menu")}
 async function doAuth(isNew){if(authBusy||!sb)return;
  const n=document.getElementById("userBox").value.trim().toLowerCase(),p=document.getElementById("passBox").value;
  if(!/^[a-z0-9_-]{3,20}$/.test(n)){setLoginMsg("Username must be 3-20 letters, numbers, - or _ (no spaces).",true);return}
@@ -208,7 +208,7 @@ async function doAuth(isNew){if(authBusy||!sb)return;
   }
  }catch(e){acct=null;setLoginMsg("Something went wrong ("+((e&&e.message)||"error")+"). Try again.",true)}
  finally{authBusy=false;setAuthBtns(true)}}
-async function logout(){const a=acct;if(a){if(a.timer)await writeSave();for(let i=0;i<20&&a.busy;i++)await new Promise(r=>setTimeout(r,150))}try{await sb.auth.signOut()}catch(e){}acct=null;save=fresh();updateHud();document.getElementById("passBox").value="";document.getElementById("adminBtn").classList.add("hidden");document.getElementById("adminQuickBtn").classList.add("hidden");document.getElementById("topLogoutBtn").classList.add("hidden");document.getElementById("chargeWrap").classList.add("hidden");setLoginMsg("You're logged out.");state="login";show("login")}
+async function logout(){const a=acct;if(a){if(a.timer)await writeSave();for(let i=0;i<20&&a.busy;i++)await new Promise(r=>setTimeout(r,150))}try{await sb.auth.signOut()}catch(e){}acct=null;save=fresh();updateHud();document.getElementById("passBox").value="";document.getElementById("navAdminBtn").classList.add("hidden");document.getElementById("bottomBar").classList.add("hidden");document.getElementById("chargeWrap").classList.add("hidden");setLoginMsg("You're logged out.");state="login";show("login")}
 async function initAuth(){
  try{const u=localStorage.getItem("verityUser");if(u)document.getElementById("userBox").value=u}catch(e){}
  setAuthBtns(false);
@@ -368,29 +368,24 @@ requestAnimationFrame(frame);
 addEventListener("pointerdown",ensureAudio);
 document.getElementById("playBtn").onclick=()=>{resetFlight();show(null)};
 document.getElementById("stopBtn").onclick=()=>{if(state==="flying")finish()};
-document.getElementById("menuShopBtn").onclick=()=>openShop("menu");
-document.getElementById("adminBtn").onclick=openAdmin;
-document.getElementById("adminQuickBtn").onclick=openAdmin;
+document.getElementById("navShopBtn").onclick=()=>{if(["menu","ground","flying"].includes(state))openShop(state)};
+document.getElementById("navBackupBtn").onclick=()=>{if(state==="flying"){say("Finish your flight first!",1.5);return}returnState=state;state="data";const box=document.getElementById("saveBox");box.value=encodeSave();document.getElementById("dataMsg").textContent="";show("dataScreen")};
+document.getElementById("navAdminBtn").onclick=openAdmin;
+document.getElementById("navLogoutBtn").onclick=()=>{if(state==="flying"){say("Finish your flight first!",1.5);return}logout()};
 document.getElementById("adminRefreshBtn").onclick=()=>loadAdminScores();
 document.getElementById("adminTabs").onclick=event=>{const button=event.target.closest("[data-admin-section]");if(button)loadAdminScores(button.dataset.adminSection)};
 document.getElementById("adminBackBtn").onclick=()=>{state="menu";show("menu")};
-document.getElementById("topShopBtn").onclick=function(){this.blur();if(["ground","flying"].includes(state))openShop(state)};
 document.getElementById("closeShop").onclick=closeShop;
 document.getElementById("loginBtn").onclick=()=>doAuth(false);
 document.getElementById("registerBtn").onclick=()=>doAuth(true);
 document.getElementById("passBox").addEventListener("keydown",e=>{if(e.key==="Enter")doAuth(false)});
-document.getElementById("logoutBtn").onclick=logout;
-document.getElementById("topLogoutBtn").onclick=function(){this.blur();if(state==="flying"){say("Finish your flight first!",1.5);return}if(state==="ground")logout()};
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&acct&&acct.timer)writeSave()});
-document.getElementById("dataBtn").onclick=()=>{state="data";const b=document.getElementById("saveBox");b.value=encodeSave();document.getElementById("dataMsg").textContent="";show("dataScreen")};
-document.getElementById("dataBackBtn").onclick=()=>{state="menu";show("menu")};
+document.getElementById("dataBackBtn").onclick=()=>{state=returnState;if(state==="menu")show("menu");else if(state==="admin")show("adminScreen");else if(state==="pause")show("pause");else show(null);if(state==="ground")document.getElementById("chargeWrap").classList.remove("hidden")};
 document.getElementById("copySaveBtn").onclick=async()=>{const b=document.getElementById("saveBox"),m=document.getElementById("dataMsg");b.value=encodeSave();b.focus();b.select();try{await navigator.clipboard.writeText(b.value);m.textContent="Copied! Keep it somewhere safe."}catch(e){try{document.execCommand("copy");m.textContent="Copied! Keep it somewhere safe."}catch(_){m.textContent="Selected. Press Ctrl+C to copy."}}};
 document.getElementById("loadSaveBtn").onclick=()=>{const m=document.getElementById("dataMsg"),s2=decodeSave(document.getElementById("saveBox").value);if(!s2){m.textContent="That code doesn't look right. Paste a full code that starts with VERITY1:";return}if(hasProgress(save)&&!confirm("Replace your current progress with this code?"))return;save=normalizeSave(s2);persist();updateHud();m.textContent="Loaded! Points: "+save.coins.toLocaleString()+", best: "+save.best.toLocaleString()+" m."};
 document.getElementById("againBtn").onclick=()=>{resetFlight();show(null)};
-document.getElementById("resultShopBtn").onclick=()=>openShop("result");
 document.getElementById("menuBtn").onclick=()=>{state="menu";show("menu")};
 document.getElementById("resumeBtn").onclick=()=>{state=pausedFrom;show(null);if(state==="ground")document.getElementById("chargeWrap").classList.remove("hidden")};
-document.getElementById("pauseShopBtn").onclick=()=>openShop("pause");
 document.getElementById("pauseMenuBtn").onclick=()=>{state="menu";show("menu")};
 addEventListener("keydown",e=>{ensureAudio();if(e.target&&(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT"))return;if(["Space","ArrowLeft","ArrowRight"].includes(e.code))e.preventDefault();if(e.repeat)return;
  if(e.code==="Space"){if(state==="ground"&&!launchPending)charging=true;else if(state==="result"){resetFlight();show(null)}}
