@@ -183,11 +183,11 @@ function readLocalSave(){try{return JSON.parse(localStorage.getItem("veritySave"
 async function startSession(user){
  const name=String(user.email||"").split("@")[0]||"player";
  const{data,error}=await sb.from("saves").select("data").eq("user_id",user.id).maybeSingle();if(error)throw error;
- const isAdmin=name==="admin"&&user.app_metadata?.role==="admin";acct={name,uid:user.id,timer:null,busy:false,isAdmin};
+ const{error:adminCheckError}=await sb.rpc("admin_list_scores");const isAdmin=!adminCheckError;acct={name,uid:user.id,timer:null,busy:false,isAdmin};
  const{data:settings,error:settingsError}=await sb.rpc("get_game_settings");if(!settingsError&&settings)gameSettings={...gameSettings,...settings};
  if(data&&data.data){save=normalizeSave(sanitizeSave(data.data))}else{save=fresh();const loc=readLocalSave();if(hasProgress(loc)&&confirm("Found progress saved in this browser. Add it to your account \""+name+"\"?")){save=normalizeSave(sanitizeSave(loc));persist()}}acct.syncedCoins=save.coins;acct.syncedUpgrades={...save.upgrades};
  try{localStorage.setItem("verityUser",name)}catch(e){}
- document.getElementById("passBox").value="";document.getElementById("whoLine").textContent="Logged in as "+name;setCloudStatus("☁ Progress saves to your account automatically");updateHud();document.getElementById("adminBtn").classList.toggle("hidden",!isAdmin);document.getElementById("adminQuickBtn").classList.toggle("hidden",!isAdmin);document.getElementById("topLogoutBtn").classList.remove("hidden");state="menu";show("menu")}
+ document.getElementById("passBox").value="";document.getElementById("whoLine").textContent="Logged in as "+name;setCloudStatus(name==="admin"&&adminCheckError?"☁ Admin access check failed: "+adminCheckError.message:"☁ Progress saves to your account automatically");updateHud();document.getElementById("adminBtn").classList.toggle("hidden",!isAdmin);document.getElementById("adminQuickBtn").classList.toggle("hidden",!isAdmin);document.getElementById("topLogoutBtn").classList.remove("hidden");state="menu";show("menu")}
 async function doAuth(isNew){if(authBusy||!sb)return;
  const n=document.getElementById("userBox").value.trim().toLowerCase(),p=document.getElementById("passBox").value;
  if(!/^[a-z0-9_-]{3,20}$/.test(n)){setLoginMsg("Username must be 3-20 letters, numbers, - or _ (no spaces).",true);return}
