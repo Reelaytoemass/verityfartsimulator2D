@@ -155,7 +155,7 @@ let gameSettings={launchSpeedMultiplier:1,gravityMultiplier:1,pointsMultiplier:1
 function maxUpgradeLevel(k,tier=save.upgradeTier){return defs[k].max+tier*UPGRADE_LEVELS_PER_TIER}
 function setCloudStatus(t){const e=document.getElementById("cloudStatus");if(e)e.textContent=t}
 function normalizeSave(s){return{...fresh(),...s,upgrades:{...fresh().upgrades,...(s.upgrades||{})}}}
-function hasProgress(s){return !!s&&(s.launches>0||s.coins>0||s.best>0||Object.values(s.upgrades||{}).some(v=>v>0))}
+function hasProgress(s){return !!s&&(s.launches>0||s.coins>0||s.best>0||s.upgradeTier>0||Object.values(s.upgrades||{}).some(v=>v>0))}
 function sanitizeSave(o){const num=v=>Number.isFinite(v)&&v>=0?Math.floor(v):0,out=fresh();if(!o||typeof o!=="object")return out;for(const k of["coins","best","launches","totalDistance"])out[k]=num(o[k]);out.upgradeTier=Math.min(MAX_UPGRADE_TIER,num(o.upgradeTier));for(const k of Object.keys(defs))out.upgrades[k]=Math.min(maxUpgradeLevel(k,out.upgradeTier),num((o.upgrades||{})[k]));return out}
 function withTimeout(p,ms){return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),ms))])}
 const SUPABASE_URL="https://httrozubisyfwznamcjg.supabase.co",SUPABASE_KEY="sb_publishable_k0bG26zgjAqKBLCNL1GZGQ_tqg101jl",EMAIL_DOMAIN="verity-players.com";
@@ -164,16 +164,16 @@ function persist(){save.savedAt=Date.now();acctQueue()}
 function acctQueue(){if(!acct||acct.timer)return;acct.timer=setTimeout(()=>writeSave(),1500)}
 async function writeSave(){
  const a=acct;if(!a)return;if(a.timer){clearTimeout(a.timer);a.timer=null}if(a.busy){a.timer=setTimeout(()=>writeSave(),500);return}
- a.busy=true;const localCoins=save.coins,localUpgrades={...save.upgrades};
+ a.busy=true;const localCoins=save.coins,localTier=save.upgradeTier,localUpgrades={...save.upgrades};
  try{
   const{data:remote,error:readError}=await sb.from("saves").select("data").eq("user_id",a.uid).maybeSingle();if(readError)throw readError;
-  const remoteSave=remote&&remote.data?sanitizeSave(remote.data):fresh(),mergedCoins=Math.max(0,remoteSave.coins+localCoins-(a.syncedCoins||0)),mergedUpgrades={};
+  const remoteSave=remote&&remote.data?sanitizeSave(remote.data):fresh(),mergedCoins=Math.max(0,remoteSave.coins+localCoins-(a.syncedCoins||0)),mergedTier=localTier!==a.syncedUpgradeTier?localTier:remoteSave.upgradeTier,mergedUpgrades={};
   for(const key of Object.keys(defs)){mergedUpgrades[key]=localUpgrades[key]!==a.syncedUpgrades?.[key]?localUpgrades[key]:remoteSave.upgrades[key]}
-  const payload={...save,coins:mergedCoins,upgrades:mergedUpgrades};
+  const payload={...save,coins:mergedCoins,upgradeTier:mergedTier,upgrades:mergedUpgrades};
   const{error}=await sb.from("saves").upsert({user_id:a.uid,data:JSON.parse(JSON.stringify(payload)),updated_at:new Date().toISOString()});if(error)throw error;
-  a.syncedCoins=mergedCoins;a.syncedUpgrades={...mergedUpgrades};
-  save.coins=Math.max(0,mergedCoins+save.coins-localCoins);
-  for(const key of Object.keys(defs))save.upgrades[key]=Math.max(0,Math.min(defs[key].max,mergedUpgrades[key]+save.upgrades[key]-localUpgrades[key]));
+  a.syncedCoins=mergedCoins;a.syncedUpgradeTier=mergedTier;a.syncedUpgrades={...mergedUpgrades};
+  save.coins=Math.max(0,mergedCoins+save.coins-localCoins);save.upgradeTier=Math.min(MAX_UPGRADE_TIER,Math.max(0,mergedTier+save.upgradeTier-localTier));
+  for(const key of Object.keys(defs))save.upgrades[key]=Math.max(0,Math.min(maxUpgradeLevel(key,save.upgradeTier),mergedUpgrades[key]+save.upgrades[key]-localUpgrades[key]));
   updateHud();setCloudStatus("☁ Saved to your account")
  }catch(e){setCloudStatus("☁ Couldn't save to your account. Check your connection.")}
  a.busy=false
@@ -186,7 +186,7 @@ async function startSession(user){
  const{data,error}=await sb.from("saves").select("data").eq("user_id",user.id).maybeSingle();if(error)throw error;
  const{error:adminCheckError}=await sb.rpc("admin_list_scores");const isAdmin=!adminCheckError;acct={name,uid:user.id,timer:null,busy:false,isAdmin};
  const{data:settings,error:settingsError}=await sb.rpc("get_game_settings");if(!settingsError&&settings)gameSettings={...gameSettings,...settings};
- if(data&&data.data){save=normalizeSave(sanitizeSave(data.data))}else{save=fresh();const loc=readLocalSave();if(hasProgress(loc)&&confirm("Found progress saved in this browser. Add it to your account \""+name+"\"?")){save=normalizeSave(sanitizeSave(loc));persist()}}acct.syncedCoins=save.coins;acct.syncedUpgrades={...save.upgrades};
+ if(data&&data.data){save=normalizeSave(sanitizeSave(data.data))}else{save=fresh();const loc=readLocalSave();if(hasProgress(loc)&&confirm("Found progress saved in this browser. Add it to your account \""+name+"\"?")){save=normalizeSave(sanitizeSave(loc));persist()}}acct.syncedCoins=save.coins;acct.syncedUpgradeTier=save.upgradeTier;acct.syncedUpgrades={...save.upgrades};
  try{localStorage.setItem("verityUser",name)}catch(e){}
  document.getElementById("passBox").value="";document.getElementById("whoLine").textContent="Logged in as "+name;setCloudStatus(name==="admin"&&adminCheckError?"☁ Admin access check failed: "+adminCheckError.message:"☁ Progress saves to your account automatically");updateHud();document.getElementById("adminBtn").classList.toggle("hidden",!isAdmin);document.getElementById("adminQuickBtn").classList.toggle("hidden",!isAdmin);document.getElementById("topLogoutBtn").classList.remove("hidden");state="menu";show("menu")}
 async function doAuth(isNew){if(authBusy||!sb)return;
@@ -270,9 +270,9 @@ async function launch(){
  if(state!=="ground")return;
  if(error||!settings){say("COULDN'T LOAD GAME SETTINGS",3);return}
  gameSettings={...gameSettings,...settings};
- let tank=1+save.upgrades.tank*.12,ratio=Math.min(tank,charge),bonus=1;
- if(save.upgrades.luck&&Math.random()<Math.min(.45,save.upgrades.luck*.025)){bonus=1+rand(.25,.8);say("LUCKY LAUNCH!")}
- vy=(260+520*ratio)*(1+save.upgrades.force*.12)*bonus*gameSettings.launchSpeedMultiplier;
+ const powerScale=1+save.upgradeTier*.15,tank=1+save.upgrades.tank*.12*powerScale,ratio=Math.min(tank,charge);let bonus=1;
+ if(save.upgrades.luck&&Math.random()<Math.min(.45,save.upgrades.luck*.025*powerScale)){bonus=1+rand(.25,.8);say("LUCKY LAUNCH!")}
+ vy=(260+520*ratio)*(1+save.upgrades.force*.12*powerScale)*bonus*gameSettings.launchSpeedMultiplier;
  vx=rand(-22,22);charge=0;state="flying";boostReady=true;save.launches++;playFart(ratio);document.getElementById("stopBtn").classList.remove("hidden");document.getElementById("chargeWrap").classList.add("hidden");persist()
 }
 function finish(){let earned=flightCoins;save.coins+=earned;save.best=Math.max(save.best,Math.floor(maxHeight));save.totalDistance+=Math.floor(maxHeight);persist();document.getElementById("resultDistance").textContent=Math.floor(maxHeight).toLocaleString()+" METRES";document.getElementById("resultCoins").textContent="You earned "+earned.toLocaleString()+" points!";let dist=Math.floor(maxHeight);resetFlight();show(null);say("PEAK! "+dist.toLocaleString()+" m  ·  +"+earned.toLocaleString()+" points",3)}
@@ -334,9 +334,10 @@ let last=performance.now(),keys={},pausedFrom="flying";
 let fire=[],fireAcc=0;
 function climbRoom(){return Math.max(0,H-98-H*.60)}
 function update(dt){elapsed+=dt;if(toastTime>0)toastTime-=dt;if(boostFlash>0)boostFlash-=dt;
- if(state==="ground"&&charging){let tank=1+save.upgrades.tank*.12;charge=Math.min(tank,charge+dt*(.48+save.upgrades.charge*.10))}
- if(state==="flying"){let steer=(keys.right?1:0)-(keys.left?1:0);vx+=steer*360*dt;vx*=Math.max(0,1-1.7*dt);x=Math.max(42,Math.min(W-42,x+vx*dt));let gravity=245*Math.max(.48,1-save.upgrades.eff*.025)*gameSettings.gravityMultiplier;vy-=gravity*dt;height+=vy*dt;let prevM=Math.floor(maxHeight/50);maxHeight=Math.max(maxHeight,height);let ms=Math.floor(maxHeight/50)-prevM;if(ms>0){let mult=1+Math.floor(Math.max(0,vy)/150),pts=Math.max(1,Math.floor(ms*mult*gameSettings.pointsMultiplier));flightCoins+=pts;say("+"+pts+" POINT"+(pts>1?"S":"")+(mult>1?"  (x"+mult+" speed)":""),.7)}camera=Math.max(0,height-climbRoom());let rr=Math.min(48,Math.max(34,H*.07));fireAcc+=dt*(70+130*Math.min(1,Math.max(0,vy)/700));while(fireAcc>=1&&fire.length<500){fireAcc--;fire.push({x:x+rand(-rr*.45,rr*.45),wy:height-rr*.8,vx:rand(-45,45)+vx*.2,vy:vy*.15-rand(220,520),life:0,max:rand(.35,.75),s:rand(.6,1.15)*rr*.55})}for(const p of fire){p.life+=dt;p.wy+=p.vy*dt;p.x+=p.vx*dt}fire=fire.filter(p=>p.life<p.max);if(vy<=0){finish()}}
- updateHud();document.getElementById("chargeFill").style.width=(charge/(1+save.upgrades.tank*.12)*100)+"%";document.getElementById("chargeLabel").textContent=charging?"CHARGING... RELEASE TO LAUNCH":"HOLD SPACE TO CHARGE";document.getElementById("flightHint").textContent=state==="flying"?(zone(height)[0]+" · "+Math.floor(vy)+" m/s"):"";document.getElementById("message").textContent=toastTime>0?toast:"";
+ const powerScale=1+save.upgradeTier*.15;
+ if(state==="ground"&&charging){let tank=1+save.upgrades.tank*.12*powerScale;charge=Math.min(tank,charge+dt*(.48+save.upgrades.charge*.10*powerScale))}
+ if(state==="flying"){let steer=(keys.right?1:0)-(keys.left?1:0);vx+=steer*360*dt;vx*=Math.max(0,1-1.7*dt);x=Math.max(42,Math.min(W-42,x+vx*dt));let gravity=245*Math.max(.48,1-save.upgrades.eff*.025*powerScale)*gameSettings.gravityMultiplier;vy-=gravity*dt;height+=vy*dt;let prevM=Math.floor(maxHeight/50);maxHeight=Math.max(maxHeight,height);let ms=Math.floor(maxHeight/50)-prevM;if(ms>0){let mult=1+Math.floor(Math.max(0,vy)/150),pts=Math.max(1,Math.floor(ms*mult*gameSettings.pointsMultiplier));flightCoins+=pts;say("+"+pts+" POINT"+(pts>1?"S":"")+(mult>1?"  (x"+mult+" speed)":""),.7)}camera=Math.max(0,height-climbRoom());let rr=Math.min(48,Math.max(34,H*.07));fireAcc+=dt*(70+130*Math.min(1,Math.max(0,vy)/700));while(fireAcc>=1&&fire.length<500){fireAcc--;fire.push({x:x+rand(-rr*.45,rr*.45),wy:height-rr*.8,vx:rand(-45,45)+vx*.2,vy:vy*.15-rand(220,520),life:0,max:rand(.35,.75),s:rand(.6,1.15)*rr*.55})}for(const p of fire){p.life+=dt;p.wy+=p.vy*dt;p.x+=p.vx*dt}fire=fire.filter(p=>p.life<p.max);if(vy<=0){finish()}}
+ updateHud();document.getElementById("chargeFill").style.width=(charge/(1+save.upgrades.tank*.12*powerScale)*100)+"%";document.getElementById("chargeLabel").textContent=charging?"CHARGING... RELEASE TO LAUNCH":"HOLD SPACE TO CHARGE";document.getElementById("flightHint").textContent=state==="flying"?(zone(height)[0]+" · "+Math.floor(vy)+" m/s"):"";document.getElementById("message").textContent=toastTime>0?toast:"";
 }
 function smiley(px,py,r,face="normal"){ctx.save();ctx.shadowColor="#ffdc54";ctx.shadowBlur=boostFlash>0?32:12;let g=ctx.createRadialGradient(px-r*.3,py-r*.4,r*.08,px,py,r);g.addColorStop(0,"#fff18a");g.addColorStop(.62,"#ffdc43");g.addColorStop(1,"#e9a921");ctx.fillStyle=g;ctx.beginPath();ctx.arc(px,py,r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle="#25243b";let ey=py-r*.17,dx=r*.34;if(face==="charged"){ctx.strokeStyle="#25243b";ctx.lineWidth=Math.max(2,r*.07);for(let xx of [px-dx,px+dx]){ctx.beginPath();ctx.arc(xx,ey,r*.10,0,Math.PI);ctx.stroke()}}else{for(let xx of [px-dx,px+dx]){ctx.beginPath();ctx.ellipse(xx,ey,r*.075,r*.16,0,0,Math.PI*2);ctx.fill()}}ctx.strokeStyle="#25243b";ctx.lineWidth=Math.max(2,r*.065);ctx.lineCap="round";ctx.beginPath();if(face==="charged")ctx.ellipse(px,py+r*.29,r*.16,r*.12,0,0,Math.PI*2);else if(face==="flying")ctx.arc(px,py+r*.17,r*.29,0,Math.PI);else ctx.arc(px,py+r*.10,r*.30,.12*Math.PI,.88*Math.PI);ctx.stroke();ctx.restore()}
 function hexRgb(h){return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]}
