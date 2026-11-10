@@ -99,6 +99,7 @@ textarea#saveBox{width:100%;height:120px;margin:8px 0;background:#12183a;color:#
   <div class="card">
     <h2>🚀 UPGRADE SHOP</h2>
     <p>Your points: <b id="shopCoins" style="color:#ffdb59">0</b></p>
+    <p id="upgradeTierText"></p>
     <div id="shopList"></div>
     <div class="actions"><button class="secondary" id="closeShop">BACK TO GAME</button></div>
   </div>
@@ -147,13 +148,15 @@ const defs={
  eff:{name:"Fuel Efficiency",desc:"Keep your speed longer",base:55,step:1.35,max:20},
  luck:{name:"Lucky Launch",desc:"Chance of bonus launch power",base:100,step:1.45,max:15}
 };
-const fresh=()=>({coins:0,best:0,launches:0,totalDistance:0,upgrades:Object.fromEntries(Object.keys(defs).map(k=>[k,0]))});
+const MAX_UPGRADE_TIER=10,UPGRADE_LEVELS_PER_TIER=5;
+const fresh=()=>({coins:0,best:0,launches:0,totalDistance:0,upgradeTier:0,upgrades:Object.fromEntries(Object.keys(defs).map(k=>[k,0]))});
 let save=fresh();
 let gameSettings={launchSpeedMultiplier:1,gravityMultiplier:1,pointsMultiplier:1};
+function maxUpgradeLevel(k,tier=save.upgradeTier){return defs[k].max+tier*UPGRADE_LEVELS_PER_TIER}
 function setCloudStatus(t){const e=document.getElementById("cloudStatus");if(e)e.textContent=t}
 function normalizeSave(s){return{...fresh(),...s,upgrades:{...fresh().upgrades,...(s.upgrades||{})}}}
 function hasProgress(s){return !!s&&(s.launches>0||s.coins>0||s.best>0||Object.values(s.upgrades||{}).some(v=>v>0))}
-function sanitizeSave(o){const num=v=>Number.isFinite(v)&&v>=0?Math.floor(v):0,out=fresh();if(!o||typeof o!=="object")return out;for(const k of["coins","best","launches","totalDistance"])out[k]=num(o[k]);for(const k of Object.keys(defs))out.upgrades[k]=Math.min(defs[k].max,num((o.upgrades||{})[k]));return out}
+function sanitizeSave(o){const num=v=>Number.isFinite(v)&&v>=0?Math.floor(v):0,out=fresh();if(!o||typeof o!=="object")return out;for(const k of["coins","best","launches","totalDistance"])out[k]=num(o[k]);out.upgradeTier=Math.min(MAX_UPGRADE_TIER,num(o.upgradeTier));for(const k of Object.keys(defs))out.upgrades[k]=Math.min(maxUpgradeLevel(k,out.upgradeTier),num((o.upgrades||{})[k]));return out}
 function withTimeout(p,ms){return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),ms))])}
 const SUPABASE_URL="https://httrozubisyfwznamcjg.supabase.co",SUPABASE_KEY="sb_publishable_k0bG26zgjAqKBLCNL1GZGQ_tqg101jl",EMAIL_DOMAIN="verity-players.com";
 let acct=null,sb=null,authBusy=false;
@@ -273,8 +276,11 @@ async function launch(){
  vx=rand(-22,22);charge=0;state="flying";boostReady=true;save.launches++;playFart(ratio);document.getElementById("stopBtn").classList.remove("hidden");document.getElementById("chargeWrap").classList.add("hidden");persist()
 }
 function finish(){let earned=flightCoins;save.coins+=earned;save.best=Math.max(save.best,Math.floor(maxHeight));save.totalDistance+=Math.floor(maxHeight);persist();document.getElementById("resultDistance").textContent=Math.floor(maxHeight).toLocaleString()+" METRES";document.getElementById("resultCoins").textContent="You earned "+earned.toLocaleString()+" points!";let dist=Math.floor(maxHeight);resetFlight();show(null);say("PEAK! "+dist.toLocaleString()+" m  ·  +"+earned.toLocaleString()+" points",3)}
-function buy(k){let c=cost(k),lvl=save.upgrades[k];if(lvl>=defs[k].max){say("MAX LEVEL!");return}if(save.coins<c){say("NOT ENOUGH POINTS!");return}save.coins-=c;save.upgrades[k]++;persist();renderShop();updateHud()}
-function renderShop(){document.getElementById("shopCoins").textContent=save.coins.toLocaleString();const list=document.getElementById("shopList");list.innerHTML="";Object.keys(defs).forEach(k=>{let d=defs[k],lvl=save.upgrades[k],max=lvl>=d.max,c=cost(k),row=document.createElement("div");row.className="row";let info=document.createElement("div");info.innerHTML=`<b>${d.name}</b><small>${d.desc} · Level ${lvl}/${d.max}</small>`;let btn=document.createElement("button");btn.textContent=max?"MAX":c.toLocaleString()+" pts";btn.disabled=max||save.coins<c;btn.onclick=()=>buy(k);row.append(info,btn);list.append(row)})}
+function buy(k){let c=cost(k),lvl=save.upgrades[k],max=maxUpgradeLevel(k);if(lvl>=max){say("MAX LEVEL!");return}if(save.coins<c){say("NOT ENOUGH POINTS!");return}save.coins-=c;save.upgrades[k]++;persist();renderShop();updateHud()}
+function tierAdvanceCost(){return Math.floor(5000*Math.pow(4,save.upgradeTier))}
+function canAdvanceTier(){return Object.keys(defs).every(k=>save.upgrades[k]>=maxUpgradeLevel(k))}
+function advanceUpgradeTier(){if(save.upgradeTier>=MAX_UPGRADE_TIER){say("MAX UPGRADE SET!");return}if(!canAdvanceTier()){say("MAX ALL UPGRADES FIRST!");return}const price=tierAdvanceCost();if(save.coins<price){say("NOT ENOUGH POINTS!");return}save.coins-=price;save.upgradeTier++;persist();renderShop();updateHud();say("UPGRADE SET "+(save.upgradeTier+1)+" UNLOCKED!")}
+function renderShop(){document.getElementById("shopCoins").textContent=save.coins.toLocaleString();document.getElementById("upgradeTierText").textContent="SET "+(save.upgradeTier+1)+" · UPGRADE POWER ×"+(1+save.upgradeTier*.15).toFixed(2);const list=document.getElementById("shopList");list.innerHTML="";Object.keys(defs).forEach(k=>{let d=defs[k],lvl=save.upgrades[k],max=lvl>=maxUpgradeLevel(k),c=cost(k),row=document.createElement("div");row.className="row";let info=document.createElement("div");info.innerHTML=`<b>${d.name}</b><small>${d.desc} · Level ${lvl}/${maxUpgradeLevel(k)}</small>`;let btn=document.createElement("button");btn.textContent=max?"MAX":c.toLocaleString()+" pts";btn.disabled=max||save.coins<c;btn.onclick=()=>buy(k);row.append(info,btn);list.append(row)});const tierRow=document.createElement("div"),info=document.createElement("div"),btn=document.createElement("button"),atMax=save.upgradeTier>=MAX_UPGRADE_TIER,price=tierAdvanceCost();tierRow.className="row";info.innerHTML=`<b>${atMax?"All Sets Unlocked":"Next Upgrade Set"}</b><small>${atMax?"Maximum set reached":canAdvanceTier()?"Unlocks +5 levels for every upgrade":"Max every upgrade to unlock the next set"}</small>`;btn.textContent=atMax?"MAX":price.toLocaleString()+" pts";btn.disabled=atMax||!canAdvanceTier()||save.coins<price;btn.onclick=advanceUpgradeTier;tierRow.append(info,btn);list.append(tierRow)}
 let adminSection="points";
 async function loadAdminScores(section=adminSection){
  adminSection=section;
